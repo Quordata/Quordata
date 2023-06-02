@@ -164,6 +164,9 @@ class Utils:
     @staticmethod
     def get_all_tickers(day=None):
 
+        # TODO fix, FINRA updated their resources
+
+        '''
         if not day:
             day = Utils.get_last_trading_day()
 
@@ -178,8 +181,11 @@ class Utils:
         data = Utils.get_file_from_url(url, filename + '.txt')
         text = Utils.replace_line_to_comma(data)
         df = Utils.regsho_txt_to_df(text)
+        '''
 
-        return df['Symbol'].tolist()
+        df = pd.read_csv('../data/MarketData/stock_list.csv', keep_default_na=False)
+
+        return df
 
     @staticmethod
     def shuffle_data(data, seed=123):
