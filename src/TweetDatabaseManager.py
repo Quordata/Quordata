@@ -5,9 +5,12 @@ import selenium.common.exceptions
 import BotometerRequests as br
 import TweetCollector
 from Scweet.scweet import scrape
+from Scweet.utils import init_driver, log_in
 from utilities import Utils
 import os
 import time
+from QuordataSqlManager import QuordataSqlManager
+import CompaniesManager
 
 
 class TweetDatabaseManager:
@@ -68,12 +71,12 @@ class TweetDatabaseManager:
             return full_df
 
     @staticmethod
-    def req_past_tweets(keyword: str, start_day: str, end_day: str = None, interval: int = 5):
+    def req_past_tweets(keywords: list, start_day: str, end_day: str = None, interval: int = 5):
 
         """Gets tweets from the past from a date. If no end_day is given, assumes up to current day.
 
-        :param keyword: Query to search past history for.
-        :type keyword: str
+        :param keywords: Query to search past history for.
+        :type keywords: list
         :param start_day: String of start date, format of YYYY-MM-DD
         :type start_day: str
         :param end_day: String of end date, format of YYYY-MM-DD
@@ -86,12 +89,26 @@ class TweetDatabaseManager:
 
         start = time.time()
 
-        try:
-            data = scrape(words=[keyword], hashtag=keyword, since=start_day, until=end_day,
-                          lang='en', interval=interval)
-        except selenium.common.exceptions.StaleElementReferenceException as _:
-            print(f'Stale element reference exception while collecting data for {keyword}')
-            data = None
+        data = pd.DataFrame()
+
+        while True:
+            try:
+                driver = init_driver(headless=True)
+
+                log_in(driver, env="../doc/.env")
+
+                data = scrape(words=keywords, hashtag=keywords[0], since=start_day, until=end_day,
+                              lang='en', interval=interval, driver=driver)
+                break
+            except selenium.common.exceptions.StaleElementReferenceException as _:
+                print(f'Stale element reference exception while collecting data for {keywords[0]}')
+                data = None
+                break
+            except selenium.common.exceptions.TimeoutException as e:
+                print(e)
+            except selenium.common.exceptions.NoSuchElementException as e:
+                print(e)
+                break
 
         print(time.time() - start)
 
@@ -289,36 +306,35 @@ class TweetDatabaseManager:
 
 if __name__ == '__main__':
 
-    queries = pd.read_csv('../doc/beta_companies_keywords.csv')
+    qsm = QuordataSqlManager()
+    company_names = qsm.get_companies()
 
-    start_day = '2022-09-01'
-    end_day = '2022-10-01'
+    sp_russell_tickers = CompaniesManager.get_sp_russell_list(get_russell=False)
+
+    company_names = {key: value for key, value in company_names.items() if key in sp_russell_tickers}
+
+    start_day = '2023-05-01'
+    end_day = '2023-06-01'
 
     tm = TweetCollector.TwitterManager()
 
-    for _, row in queries.iterrows():
+    for key, val in company_names.items():
 
-        for key, val in row.items():
+        start_time = time.time()
 
-            query = key + ' ' + val
+        alias = val[0].split()[0]
+        keywords = [key, alias]
+        filename = f'../data/TweetData/{"_".join(keywords)}.csv'
 
-            print(f'Collecting data for {query}')
+        print(f'Collecting data for {key}')
 
-            filename = f'../data/TweetData/Historic SP-100_{start_day.replace("-", "")}-' \
-                       f'{end_day.replace("-", "")}/{query}{start_day.replace("-", "")}-' \
-                       f'{end_day.replace("-", "")}'
-            scraped_filename = filename + 'Scrape.csv'
+        if not os.path.exists(filename):
 
-            if not os.path.exists(filename + '.csv'):
+            qdf = TweetDatabaseManager.req_past_tweets(keywords, start_day=start_day, end_day=end_day,
+                                                       interval=1)
+            if qdf is None or qdf.empty:
+                continue
 
-                if not os.path.exists(scraped_filename):
-    
-                    qdf = TweetDatabaseManager.req_past_tweets(query, start_day=start_day, end_day=end_day, interval=1)
-    
-                    if qdf is None or qdf.empty:
-                        continue
-    
-                    Utils.write_dataframe_to_csv(qdf, scraped_filename, write_index=False)
+            Utils.write_dataframe_to_csv(qdf, filename, write_index=False)
 
-                #qdf = tm.tweet_urls_to_dataframe(scraped_filename, val)
-                #Utils.write_dataframe_to_csv(qdf, filename + '.csv', write_index=False)
+        print(time.time() - start_time)

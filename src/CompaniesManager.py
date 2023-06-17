@@ -71,12 +71,17 @@ def get_yfinance_ticker_info(tickers):
     return ticker_data
 
 
-def get_sp_russell_list():
+def get_sp_russell_list(get_sp=True, get_russell=True):
 
-    sp = pd.read_csv('../data/MarketData/sp_500.csv')
-    russell = pd.read_csv('../data/MarketData/russell_2000.csv')
+    sp = []
+    russell = []
 
-    return sp['Symbol'].to_list() + russell['Ticker'].to_list()
+    if get_sp:
+        sp = pd.read_csv('../data/MarketData/sp_500.csv')['Symbol'].to_list()
+    if get_russell:
+        russell = pd.read_csv('../data/MarketData/russell_2000.csv')['Ticker'].to_list()
+
+    return sp + russell
 
 
 def get_historical_tickers_data(tickers, start_date, end_date):
@@ -127,6 +132,6 @@ def update_companies_database():
 
 if __name__ == '__main__':
 
-    stock_data = get_sp_russell_historical_data('2000-01-01')
+    stock_data = get_sp_russell_historical_data('2021-01-01', '2021-12-31')
     qsm = QuordataSqlManager()
     qsm.update_stock_data(stock_data)

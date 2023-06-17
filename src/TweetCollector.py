@@ -183,3 +183,7 @@ def export_tweets(phrase='', filter_in=None, filter_out=None, history_count=1000
                                                 '' + phrase + '_tweet_history_search.csv'):
         Utils.write_dataframe_to_csv(tweets, '' + phrase + '_tweet_history_search.csv')
 
+
+if __name__ == '__main__':
+
+    tm = TwitterManager()

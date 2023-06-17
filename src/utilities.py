@@ -346,6 +346,11 @@ class Utils:
         else:
             print('Writing data to ' + filename + '...')
 
+            # Create directories if they don't exist
+            directory = path.dirname(filename)
+            if not path.exists(directory):
+                makedirs(directory)
+
             # Attempt to write to csv
             try:
                 df.to_csv(filename, index=write_index)

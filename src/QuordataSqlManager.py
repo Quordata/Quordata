@@ -1,6 +1,4 @@
 import mysql.connector
-import os
-import numpy as np
 
 
 class QuordataSqlManager:
@@ -9,10 +7,8 @@ class QuordataSqlManager:
 
         # Replace the placeholder values with your actual database credentials
         host = '192.232.218.154'
-        #username = 'saddlnts_bcollin'
-        #password = 'r^isHk6xFL4G2pEoZb9k'
-        username = 'saddlnts'
-        password = 'o*#nD*eLA2QoJ!N8VajE'
+        username = 'saddlnts_bcollin'
+        password = 'r^isHk6xFL4G2pEoZb9k'
         database = 'saddlnts_quordata'
 
         # Connect to the MySQL database
@@ -116,62 +112,75 @@ class QuordataSqlManager:
         self.connection.commit()
         cursor.close()
 
-    def update_stock_data(self, dataframe, file_path='/home4/saddlnts/public_html/temp_data.csv'):
-        # Reset the index to convert the multi-index columns to separate columns
-        dataframe = dataframe.reset_index()
+    def update_stock_data(self, dataframe, batch_size=100):
 
-        # Replace NaN values with 0
-        dataframe = dataframe.fillna(0)
+        # Replace NaN with 0
+        dataframe.fillna(0, inplace=True)
 
-        # Save the dataframe to a temporary CSV file
-        #dataframe.to_csv(file_path, index=False)
-
-        # Get the columns for Adj Close and Volume
-        adj_close_columns = dataframe['Adj Close'].columns
-        volume_columns = dataframe['Volume'].columns
-
-        # Get the tickers from the columns
-        tickers = adj_close_columns.tolist() + volume_columns.tolist()
-
-        # Create a cursor to execute SQL queries
+        tickers = dataframe.columns.levels[1].tolist()
         cursor = self.connection.cursor()
 
-        for ticker in tickers:
-            # Get the company_id from the companies table
-            query = "SELECT company_id FROM companies WHERE ticker = %s"
-            cursor.execute(query, (ticker,))
-            result = cursor.fetchone()
+        rows_to_insert = []  # List to store the rows to be inserted
 
-            if result is None:
-                continue
+        for date, row in dataframe.iterrows():
+            timestamp = date.strftime('%Y-%m-%d')
 
-            company_id = result[0]
+            print(timestamp)
 
-            # Determine whether it's Adj Close or Volume
-            if ticker in adj_close_columns:
-                column_name = 'Adj Close'
-            else:
-                column_name = 'Volume'
+            for ticker in tickers:
+                query = "SELECT company_id FROM companies WHERE ticker = %s"
+                cursor.execute(query, (ticker,))
+                result = cursor.fetchone()
 
-            # Set up the LOAD DATA LOCAL INFILE query
-            query = """
-            LOAD DATA LOCAL INFILE '{}'
-            INTO TABLE stock_data
-            FIELDS TERMINATED BY ','
-            IGNORE 1 LINES
-            (@date, @value)
-            SET company_id = '{}', timestamp = STR_TO_DATE(@date, '%Y-%m-%d'), `price` = NULLIF(@value, '')
-            """.format(file_path, company_id)
+                if result is None:
+                    continue
 
-            if column_name == 'Volume':
-                query = query.replace('price', 'volume')
+                company_id = result[0]
+                price = row[('Adj Close', ticker)]
+                volume = row[('Volume', ticker)]
 
-            # Execute the LOAD DATA LOCAL INFILE query
-            cursor.execute(query)
+                rows_to_insert.append((company_id, timestamp, float(price), int(volume)))
+
+            # Insert the rows in batches
+            if len(rows_to_insert) >= batch_size:
+                query = "INSERT INTO stock_data (company_id, timestamp, price, volume) VALUES (%s, %s, %s, %s)"
+                cursor.executemany(query, rows_to_insert)
+                rows_to_insert = []  # Reset the list
+
+                start_time = time.time()
+
+        # Insert any remaining rows
+        if len(rows_to_insert) > 0:
+            query = "INSERT INTO stock_data (company_id, timestamp, price, volume) VALUES (%s, %s, %s, %s)"
+            cursor.executemany(query, rows_to_insert)
 
         # Commit the changes and close the cursor
         self.connection.commit()
         cursor.close()
 
-        # Remove the temporary CSV file
-        os.remove(file_path)
+    def get_companies(self):
+
+        # Create a dictionary to store the results
+        result_dict = {}
+
+        cursor = self.connection.cursor()
+
+        # Execute SELECT query
+        query = "SELECT ticker, name, alias_names FROM companies"
+        cursor.execute(query)
+
+        # Process the retrieved data
+        for ticker, name, alias_names in cursor:
+            # Split the comma-separated string of alias_names into a list
+            alias_list = alias_names.split(',')
+
+            # Create the list to be associated with the ticker
+            values_list = [name] + alias_list
+
+            # Add the ticker and associated list to the result dictionary
+            result_dict[ticker] = values_list
+
+        # Close the cursor and database connection
+        cursor.close()
+
+        return result_dict
