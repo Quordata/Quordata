@@ -1,4 +1,6 @@
 import mysql.connector
+from mysql.connector import Error
+import time
 
 
 class QuordataSqlManager:
@@ -100,17 +102,28 @@ class QuordataSqlManager:
                 company_id = result[0]
 
         if not company_id:
-            raise ValueError("Invalid company_name or company_ticker provided.")
+            print(f'Invalid company_name {company_name} or company_ticker {company_ticker} provided.')
+            return False
 
         # Insert the earnings call entry into the table
         query = "INSERT INTO earnings_calls (company_id, quarter, year, transcript, summary, sentiment) " \
                 "VALUES (%s, %s, %s, %s, %s, %s)"
         values = (company_id, quarter, year, transcript, transcript_summary, transcript_sentiment)
 
-        cursor = self.connection.cursor()
-        cursor.execute(query, values)
-        self.connection.commit()
-        cursor.close()
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute(query, values)
+            self.connection.commit()
+            cursor.close()
+        except mysql.connector.Error as error:
+            if error.errno == mysql.connector.errorcode.ER_DUP_ENTRY:
+                # Handle the duplicate entry error
+                return False
+            else:
+                # Handle other database-related errors
+                raise error
+
+        return True
 
     def update_stock_data(self, dataframe, batch_size=100):
 
